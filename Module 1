@@ -1,0 +1,401 @@
+#include <hidef.h>           /* common defines and macros */
+#include "derivative.h"      /* derivative-specific definitions */
+
+
+#define TDRE 0x80
+#define RDRF 0x20
+#define BUFFERSIZE 17
+
+  unsigned char rowCode[4] = {0x10, 0x20, 0x40, 0x80}; //lookup table for rows to scan
+  unsigned char keyCode[4][4] = {{49, 50, 51, 65},
+                                {52, 53, 54, 66},
+                                {55, 56, 57, 67},
+                                {45, 48, 43, 68}};     //lookup table for ascii value of key
+
+//function prototypes
+void init_sci1(void);
+void init_keypad(void);
+void print_question(char* question_number);
+void print_newline(void); 
+void read_SCI_input(char* buffer, int count, int digit_length);   
+void error_check(int azimuth_min, int azimuth_max, int range_min, int range_max, int resolution, int samples_per_orientation, int sample_frequency, int mode_flag, int LCD_display);
+int ascii_to_int(char ascii);
+char keyScanner(int row);
+char get_key(void);
+void delayby1s (void);
+
+void read_keypad(char* buffer, int count, int digit_length);
+
+
+//data initialisation
+
+//creating memory tags for each output
+int azimuth_min;
+int azimuth_max;
+int range_min;
+int range_max;
+int resolution;
+int samples_per_orientation;
+int sample_frequency;
+int mode_flag = 0;   //offline, online, demo
+int LCD_display = 0; //if demo what is being displayed
+int count = 0;
+int count2 = 0;
+int buffer_index = 0;
+int digit_length;
+int input;
+char buffer[BUFFERSIZE+1];
+char clearer;
+int error_flag = 0;
+int i;
+
+char key = 0x00;
+int scanrow; //which row hcs12 is scanning
+
+
+
+//storing the question prompts for the user
+char q1[] = "please press 1 for computer input or 2 for hardware input";
+char q2[] = "please type in 3 digit number for bottom threshold for azimuth range (030 min) followed by an enter";
+char q3[] = "please type in 3 digit number for max threshold for azimuth range (160 max) followed by an enter";
+char q4[] = "please type in sign followed by 2 digit number for min threshold for range (-60 min) followed by an enter (minus is asterisk, plus is hashtag)";
+char q5[] = "please type in sign followed by 2 digit number for max threshold for range (+60 min) followed by an enter (minus is asterisk, plus is hashtag)";
+char q6[] = "please type in 2 digit number (01-99) for resolution followed by an enter (each step is worth 0.1 degrees)";
+char q7[] = "please type in 1 digit number for samples per orientation followed by an enter";
+char q8[] = "please type in 1 digit number for sample frequency followed by an enter";
+char q9[] = "Please type in 1 2 3 corresponding to Offline Online or Demonstration mode";                                           
+char q10[] = "Type in 1 2 3 4 5 corresponding to displaying the laser, gyro, magnetometer, accelerometer or servo info on the LCD";
+
+//storing the error messages
+char e2[] = "invalid azimuth min";
+char e3[] = "invalid azimuth max";
+char e4[] = "invalid range min";
+char e5[] = "invalid range max";
+char e6[] = "invalid resolution";
+char e7[] = "invalid samples per orientation";
+char e8[] = "invalid sample frequency";
+char e9[] = "invalid running mode";                                           
+char e10[] = "invalid LCD display";
+
+
+
+void main(void) {
+
+//Startup Function
+                        
+init_sci1();            //configuring SCI1
+
+
+
+print_question(q1);     //printing question 1 for user (prompting 1 or 2 for computer input or user input)
+
+//read 1 or 2 from SCI1
+
+    while(!(SCI1SR1 & 0x20));               //polling to wait for something to be entered into the SCI
+    input = SCI1DRL;                        //storing the character as variable input
+    print_newline();
+
+
+switch(input){
+case '1':               //computer
+
+                              
+print_question(q2);               //requesting bottom threshold for azimuth
+read_SCI_input(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                       //incrementing pointer for buffer
+
+print_question(q3);               //requesting top threshold for azimuth
+read_SCI_input(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                       //incrementing pointer for buffer
+                                    
+print_question(q4);               //requesting bottom threshold for range
+read_SCI_input(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                       //incrementing pointer for buffer
+
+print_question(q5);               //requesting top threshold for range
+read_SCI_input(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                       //incrementing pointer for buffer
+
+print_question(q6);               //printing q for resolution
+read_SCI_input(buffer, count, 2); //receive from SCI and store into buffer
+count += 2;
+
+print_question(q7);               //printing q for orientation
+read_SCI_input(buffer, count, 1); //receive from SCI and store into buffer
+count++;
+
+print_question(q8);               //printing q for frequency
+read_SCI_input(buffer, count, 1); //receive from SCI and store into buffer
+count++;
+
+print_question(q9);               //printing q for demo mode
+read_SCI_input(buffer, count, 1); //receive from SCI and store into buffer
+count++;
+
+
+if (buffer[16] == '3') {            //if its demo mode
+  print_question(q10);              //print q to see what user wants
+  read_SCI_input(buffer, count, 1); //receive from SCI and store into buffer
+  }
+             
+
+break; 
+
+
+
+case '2':
+
+init_keypad();
+
+print_question(q2);            //requesting bottom threshold for azimuth
+read_keypad(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                    //incrementing pointer for buffer
+
+print_question(q3);            //requesting top threshold for azimuth
+read_keypad(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                    //incrementing pointer for buffer
+
+print_question(q4);            //requesting bottom threshold for range
+read_keypad(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;;                   //incrementing pointer for buffer
+
+print_question(q5);            //requesting top threshold for range
+read_keypad(buffer, count, 3); //receive from SCI and store into buffer
+count += 3;                    //incrementing pointer for buffer
+
+print_question(q6);            //printing q for resolution
+read_keypad(buffer, count, 2); //receive from SCI and store into buffer
+count += 2;
+                        
+print_question(q7);            //printing q for orientation
+read_keypad(buffer, count, 1); //receive from SCI and store into buffer
+count++;
+
+print_question(q8);            //printing q for frequency
+read_keypad(buffer, count, 1); //receive from SCI and store into buffer
+count++;
+
+print_question(q9);            //printing q for demo mode
+read_keypad(buffer, count, 1); //receive from SCI and store into buffer
+count++;
+
+
+if (buffer[16] == '3') {         //if its demo mode
+  print_question(q10); 
+  read_keypad(buffer, count, 1); //receive from SCI and store into buffer
+  }
+  
+break;
+}
+
+
+//converting the char values in the buffer to independent integers to pass on to module 2 
+azimuth_min = ascii_to_int(buffer[0]) * 100 + ascii_to_int(buffer[1]) * 10 + ascii_to_int(buffer[2]);
+azimuth_max = ascii_to_int(buffer[3]) * 100 + ascii_to_int(buffer[4]) * 10 + ascii_to_int(buffer[5]);
+
+range_min = (ascii_to_int(buffer[7]) * 10 + ascii_to_int(buffer[8]));
+
+if (buffer[6] == '-'){
+  range_min = -1 * range_min;
+ }
+ 
+range_max = (ascii_to_int(buffer[10]) * 10 + ascii_to_int(buffer[11]));
+
+if (buffer[9] == '-'){
+  range_max = -1 * range_max;
+}
+
+resolution = ascii_to_int(buffer[12]) * 10 + ascii_to_int(buffer[13]);
+samples_per_orientation = ascii_to_int(buffer[14]);
+sample_frequency = ascii_to_int(buffer[15]);
+mode_flag = ascii_to_int(buffer[16]);
+LCD_display = ascii_to_int(buffer[17]);
+
+//check for errors in user input
+error_check(azimuth_min,azimuth_max,range_min,range_max,resolution,samples_per_orientation,sample_frequency, mode_flag, LCD_display);
+  
+
+	EnableInterrupts;
+
+
+  for(;;) {
+    _FEED_COP(); /* feeds the dog */
+  } /* loop forever */
+}
+
+
+
+//////////////////////////FUNCTIONS/////////////////////////////////
+
+void init_sci1(void){
+  SCI1BDH = 0x00;
+  SCI1BDL = 0x9C; //setting baud rate as 9600
+  SCI1CR1 = 0x4C; //Select 8 data bits, address mark wake-up
+  SCI1CR2 = 0x0C; //Enabling receiver and transmiter NO INTERRUPTS?
+}
+
+
+void print_question(char* question_number){
+    for(count2 = 0; count2 < strlen(question_number); count2++){
+      SCI1DRL = question_number[count2];
+      while(!(SCI1SR1 & TD       // Wait for the TDRE flag to be set
+    }
+    SCI1DRL = '\n';              // Print newline character
+    while(!(SCI1SR1 & TDRE));    // Wait for the TDRE flag to be set
+    SCI1DRL = '\r';              // Print carriage return
+    while(!(SCI1SR1 & TDRE));    // Wait for the TDRE flag to be set
+}
+
+void print_newline(void){
+    SCI1DRL = '\n';              // Print newline character
+    while(!(SCI1SR1 & TDRE));    // Wait for the TDRE flag to be set
+    SCI1DRL = '\r';              // Print carriage return
+    while(!(SCI1SR1 & TDRE));    // Wait for the TDRE flag to be set
+}
+  
+
+
+void read_SCI_input(char* buffer, int count, int digit_length){
+  int i = count;
+  for (i;i < count + digit_length; i++){  
+    while(!(SCI1SR1 & 0x20));               //polling to wait for something to be entered into the SCI
+    buffer[i] = SCI1DRL;                    //storing the charachter into the buffer
+  }
+  print_newline();
+}
+       
+
+void delayby1s (void)
+{
+TSCR1 = 0x90;              // Enable TCNT and fast time clear
+TSCR2 = 0x07;              // Set TCNT prescaler to 1
+TIOS |= 0x01;              // Enable OC0
+TC0 = TCNT + 188;          // Pushing forward the delay by 480
+while(!(TFLG1 & 0x01));    // Waiting until the flag is cleared, 20 microseconds.
+}
+
+
+//function that converts a char value of an integer to an integer
+int ascii_to_int(char ascii){
+  int integer = ascii - 0x30;
+return integer;
+}
+
+//function that checks for errors in user input
+void error_check(int azimuth_min, int azimuth_max, int range_min, int range_max, int resolution, int samples_per_orientation, int sample_frequency, int mode_flag, int LCD_display){
+  
+  print_newline();
+  
+  if (azimuth_min<30 || azimuth_min>160){
+  print_question(e2);
+  error_flag++;
+  }
+  
+  if (azimuth_max < azimuth_min || azimuth_max>160){
+  print_question(e3);
+  error_flag++;
+  }
+  if (range_min < -60 || range_min>60){
+  print_question(e4);
+  error_flag++;
+  }
+  if (range_max < range_min || range_max > 60){
+  print_question(e5);
+  error_flag++;
+  }
+  if (resolution < 1 || resolution > 99){
+  print_question(e6);
+  error_flag++;
+  }
+  if (samples_per_orientation < 0 || samples_per_orientation > 9){
+  print_question(e7);
+  error_flag++;
+  }
+  if (sample_frequency < 0 || sample_frequency > 9){
+  print_question(e8);
+  error_flag++;
+  }
+  if (mode_flag < 1 || mode_flag > 3){
+  print_question(e9);
+  error_flag++;
+  }
+  if (LCD_display < 1 || LCD_display > 5){
+  print_question(e10);
+  error_flag++;
+  }
+  
+  if (error_flag > 0){
+    //reset   TURN ON LED?
+  }
+}
+
+void init_keypad(){
+  DDRA = 0xf0; //upper 4 bits control which row to scan, lower 4 bits are keypad
+  DDRB = 0xff;
+	DDRJ = 0xff;
+	PTJ = 0x00;
+	PORTB = 0;
+}
+
+void read_keypad(char* buffer, int count, int digit_length){
+  int i = count;
+  for (i;i < count + digit_length; i++){  
+    buffer[i] = get_key();                    //storing the charachter into the buffer
+    SCI1DRL = buffer[i];                      // Printing charachter to putty
+    while(!(SCI1SR1 & TDRE));                 // Wait for the TDRE flag to be set
+  }
+  print_newline();
+}
+
+char get_key(void){
+  
+  char keycode = 0x00;
+  key = 0x00;
+   
+   while(key == 0x00)                      //loop forever
+  {
+    for(scanrow=0; scanrow < 4; scanrow++) //start scanning rows
+    {      
+      key = keyScanner(scanrow);           //get current key
+      
+      if (key)                             //if key is pressed
+      {
+        delayby1s();                       //delay to make sure it wasn't an accident (debouncing)
+        
+        if (key == keyScanner(scanrow))    //check to see if key is still pressed
+        {
+          keycode = key;
+          for (i=0; i<500; i++){           //need delay here to prevent reverse debouncing (where button is pressed too long that it is inputted too many times
+            delayby1s();
+          }
+          return keycode;               
+        }
+      }
+    }
+  }
+}
+
+char keyScanner(int row)
+{
+                                  
+  PORTA = rowCode[row];      //set row to scan
+  
+  if (PORTA & 0x01)          //first key in row
+  {
+    return keyCode[row][0];
+  }
+  else if (PORTA & 0x02)     //second key in row
+  {
+    return keyCode[row][1];
+  }
+  else if (PORTA & 0x04)     //third key in row
+  {
+    return keyCode[row][2];
+  }
+  else if (PORTA & 0x08)     //fourth key in row
+  {
+    return keyCode[row][3];
+  }
+  
+  return '\0';               //no key pressed, return null character
+}
