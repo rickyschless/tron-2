@@ -22,7 +22,7 @@ void error_check(int azimuth_min, int azimuth_max, int range_min, int range_max,
 int ascii_to_int(char ascii);
 char keyScanner(int row);
 char get_key(void);
-void delayby1s (void);
+void delayby1ms (void);
 
 void read_keypad(char* buffer, int count, int digit_length);
 
@@ -48,6 +48,7 @@ char buffer[BUFFERSIZE+1];
 char clearer;
 int error_flag = 0;
 int i;
+int j;
 
 char key = 0x00;
 int scanrow; //which row hcs12 is scanning
@@ -56,13 +57,13 @@ int scanrow; //which row hcs12 is scanning
 
 //storing the question prompts for the user
 char q1[] = "please press 1 for computer input or 2 for hardware input";
-char q2[] = "please type in 3 digit number for bottom threshold for azimuth range (030 min) followed by an enter";
-char q3[] = "please type in 3 digit number for max threshold for azimuth range (160 max) followed by an enter";
-char q4[] = "please type in sign followed by 2 digit number for min threshold for range (-60 min) followed by an enter (minus is asterisk, plus is hashtag)";
-char q5[] = "please type in sign followed by 2 digit number for max threshold for range (+60 min) followed by an enter (minus is asterisk, plus is hashtag)";
-char q6[] = "please type in 2 digit number (01-99) for resolution followed by an enter (each step is worth 0.1 degrees)";
-char q7[] = "please type in 1 digit number for samples per orientation followed by an enter";
-char q8[] = "please type in 1 digit number for sample frequency followed by an enter";
+char q2[] = "please type in 3 digit number for bottom threshold for azimuth range (030 min)";
+char q3[] = "please type in 3 digit number for max threshold for azimuth range (160 max)";
+char q4[] = "please type in sign followed by 2 digit number for min threshold for range (-60 min) (minus is asterisk, plus is hashtag)";
+char q5[] = "please type in sign followed by 2 digit number for max threshold for range (+60 min)(minus is asterisk, plus is hashtag)";
+char q6[] = "please type in 2 digit number (01-99) for resolution (each step is worth 0.1 degrees)";
+char q7[] = "please type in 1 digit number for samples per orientation";
+char q8[] = "please type in 1 digit number for sample frequency";
 char q9[] = "Please type in 1 2 3 corresponding to Offline Online or Demonstration mode";                                           
 char q10[] = "Type in 1 2 3 4 5 corresponding to displaying the laser, gyro, magnetometer, accelerometer or servo info on the LCD";
 
@@ -76,6 +77,7 @@ char e7[] = "invalid samples per orientation";
 char e8[] = "invalid sample frequency";
 char e9[] = "invalid running mode";                                           
 char e10[] = "invalid LCD display";
+char error_found[] = "there has been an error please reset";
 
 
 
@@ -238,7 +240,7 @@ void init_sci1(void){
 void print_question(char* question_number){
     for(count2 = 0; count2 < strlen(question_number); count2++){
       SCI1DRL = question_number[count2];
-      while(!(SCI1SR1 & TD       // Wait for the TDRE flag to be set
+      while(!(SCI1SR1 & TDRE));     // Wait for the TDRE flag to be set
     }
     SCI1DRL = '\n';              // Print newline character
     while(!(SCI1SR1 & TDRE));    // Wait for the TDRE flag to be set
@@ -265,7 +267,7 @@ void read_SCI_input(char* buffer, int count, int digit_length){
 }
        
 
-void delayby1s (void)
+void delayby1ms (void)
 {
 TSCR1 = 0x90;              // Enable TCNT and fast time clear
 TSCR2 = 0x07;              // Set TCNT prescaler to 1
@@ -325,7 +327,19 @@ void error_check(int azimuth_min, int azimuth_max, int range_min, int range_max,
   }
   
   if (error_flag > 0){
-    //reset   TURN ON LED?
+    print_question(error_found);
+    
+    for(;;) {
+      PORTB = 0xFF;
+      for (j=0;j<500;j++){
+      delayby1ms();
+      }
+      PORTB= 0x00;
+      for (j=0;j<500;j++){
+      delayby1ms();
+      }
+     } /* loop forever */
+    //LED on????
   }
 }
 
@@ -360,13 +374,13 @@ char get_key(void){
       
       if (key)                             //if key is pressed
       {
-        delayby1s();                       //delay to make sure it wasn't an accident (debouncing)
+        delayby1ms();                       //delay to make sure it wasn't an accident (debouncing)
         
         if (key == keyScanner(scanrow))    //check to see if key is still pressed
         {
           keycode = key;
           for (i=0; i<500; i++){           //need delay here to prevent reverse debouncing (where button is pressed too long that it is inputted too many times
-            delayby1s();
+            delayby1ms();
           }
           return keycode;               
         }
